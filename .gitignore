@@ -1,0 +1,8 @@
+# MacOS
+.DS_Store
+
+# Rust/Cargo
+target/
+
+# Editor
+*.swp
