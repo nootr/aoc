@@ -1,10 +1,10 @@
 use std::fs;
 
-fn solve_problem_1(input: String) -> u32 {
+fn solve_problem_1(input: String) -> i64 {
     0
 }
 
-fn solve_problem_2(input: String) -> u32 {
+fn solve_problem_2(input: String) -> i64 {
     0
 }
 
@@ -24,22 +24,15 @@ mod tests {
 
     #[test]
     fn problem_1_solved() {
-        let input = String::from(
-            "
-TBD
-",
-        );
-        assert_eq!(solve_problem_1(input), 1234);
+        let content = fs::read_to_string("../input-example-1")
+            .expect("Should have been able to read the file");
+        assert_eq!(solve_problem_1(content), 1234);
     }
 
     #[test]
     fn problem_2_solved() {
-        return;  // Remove me
-        let input = String::from(
-            "
-TBD
-",
-        );
-        assert_eq!(solve_problem_2(input), 5678);
+        let content = fs::read_to_string("../input-example-2")
+            .expect("Should have been able to read the file");
+        assert_eq!(solve_problem_2(content), 5678);
     }
 }
