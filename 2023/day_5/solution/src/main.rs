@@ -1,40 +1,74 @@
+use std::cmp::{max, min};
 use std::fs;
 
 #[derive(Debug, Clone)]
-struct SeedRange {
+struct Range {
     start: u64,
     length: u64,
 }
 
+impl Range {
+    fn end(&self) -> u64 {
+        self.start + self.length
+    }
+}
+
+#[derive(Debug)]
+struct RangeMapResult {
+    mapped_range: Option<Range>,
+    remaining_ranges: Vec<Range>,
+}
+
 #[derive(Debug)]
 struct Map {
-    destination_start: u64,
-    source_start: u64,
-    range_length: u64,
+    source: Range,
+    destination: Range,
 }
 
 impl Map {
     fn new(inputs: Vec<u64>) -> Map {
         Map {
-            destination_start: inputs[0],
-            source_start: inputs[1],
-            range_length: inputs[2],
+            source: Range {
+                start: inputs[1],
+                length: inputs[2],
+            },
+            destination: Range {
+                start: inputs[0],
+                length: inputs[2],
+            },
         }
     }
 
-    fn convert(&self, input: u64) -> Option<u64> {
-        if input >= self.source_start && input < self.source_start + self.range_length {
-            Some(input - self.source_start + self.destination_start)
-        } else {
-            None
-        }
-    }
+    /// Returns the destination range if the given range overlaps with the source range.
+    fn map_range(&self, range: &Range) -> RangeMapResult {
+        let mut remaining_ranges = vec![];
 
-    fn retrace(&self, output: u64) -> Option<u64> {
-        if output >= self.destination_start && output < self.destination_start + self.range_length {
-            Some(output - self.destination_start + self.source_start)
+        if range.start < self.source.start {
+            remaining_ranges.push(Range {
+                start: range.start,
+                length: self.source.start - range.start,
+            });
+        }
+        if range.end() > self.source.end() {
+            remaining_ranges.push(Range {
+                start: self.source.end() + 1,
+                length: range.end() - self.source.end() - 1,
+            });
+        }
+        let mapped_range_length: i64 =
+            min(range.end(), self.source.end()) as i64 - max(range.start, self.source.start) as i64;
+        let mapped_range = if mapped_range_length > 0 {
+            Some(Range {
+                start: max(range.start, self.source.start) + self.destination.start
+                    - self.source.start,
+                length: mapped_range_length as u64,
+            })
         } else {
             None
+        };
+        RangeMapResult {
+            mapped_range,
+            remaining_ranges,
         }
     }
 }
@@ -53,7 +87,7 @@ enum ParseState {
 
 #[derive(Debug, Default)]
 struct Almanak {
-    seeds: Vec<SeedRange>,
+    seed_ranges: Vec<Range>,
     seed_to_soil: Vec<Map>,
     soil_to_fertilizer: Vec<Map>,
     fertilizer_to_water: Vec<Map>,
@@ -105,10 +139,10 @@ impl Almanak {
             match state {
                 ParseState::Seeds if !seed_range => {
                     let seeds_str = line.split(": ").collect::<Vec<&str>>()[1];
-                    almanak.seeds = seeds_str
+                    almanak.seed_ranges = seeds_str
                         .split(' ')
                         .map(|x| x.parse::<u64>().unwrap())
-                        .map(|seed| SeedRange {
+                        .map(|seed| Range {
                             start: seed,
                             length: 1,
                         })
@@ -123,7 +157,7 @@ impl Almanak {
                     for chunk in seeds_and_ranges.chunks(2) {
                         let start = chunk[0];
                         let length = chunk[1];
-                        almanak.seeds.push(SeedRange { start, length });
+                        almanak.seed_ranges.push(Range { start, length });
                     }
                 }
                 _ => {
@@ -159,124 +193,57 @@ impl Almanak {
         almanak
     }
 
-    fn seed_to_location(&self, seed: u64) -> u64 {
-        let soil = self
-            .seed_to_soil
-            .iter()
-            .find_map(|map| map.convert(seed))
-            .unwrap_or(seed);
-        let fertilizer = self
-            .soil_to_fertilizer
-            .iter()
-            .find_map(|map| map.convert(soil))
-            .unwrap_or(soil);
-        let water = self
-            .fertilizer_to_water
-            .iter()
-            .find_map(|map| map.convert(fertilizer))
-            .unwrap_or(fertilizer);
-        let light = self
-            .water_to_light
-            .iter()
-            .find_map(|map| map.convert(water))
-            .unwrap_or(water);
-        let temperature = self
-            .light_to_temperature
-            .iter()
-            .find_map(|map| map.convert(light))
-            .unwrap_or(light);
-        let humidity = self
-            .temperature_to_humidity
-            .iter()
-            .find_map(|map| map.convert(temperature))
-            .unwrap_or(temperature);
-        let location = self
-            .humidity_to_location
-            .iter()
-            .find_map(|map| map.convert(humidity))
-            .unwrap_or(humidity);
-        location
-    }
+    /// Returns the lowest location number for the given seed ranges.
+    fn lowest_location_for_seeds(&self) -> u64 {
+        let mut current_ranges = self.seed_ranges.clone();
 
-    fn location_to_seed(&self, location: u64) -> u64 {
-        // TODO: unwrap_or instead of ok_or, u64 instead of result
-        let humidity = self
-            .humidity_to_location
-            .iter()
-            .find_map(|map| map.retrace(location))
-            .unwrap_or(location);
-        let temperature = self
-            .temperature_to_humidity
-            .iter()
-            .find_map(|map| map.retrace(humidity))
-            .unwrap_or(humidity);
-        let light = self
-            .light_to_temperature
-            .iter()
-            .find_map(|map| map.retrace(temperature))
-            .unwrap_or(temperature);
-        let water = self
-            .water_to_light
-            .iter()
-            .find_map(|map| map.retrace(light))
-            .unwrap_or(light);
-        let fertilizer = self
-            .fertilizer_to_water
-            .iter()
-            .find_map(|map| map.retrace(water))
-            .unwrap_or(water);
-        let soil = self
-            .soil_to_fertilizer
-            .iter()
-            .find_map(|map| map.retrace(fertilizer))
-            .unwrap_or(fertilizer);
-        self.seed_to_soil
-            .iter()
-            .find_map(|map| map.retrace(soil))
-            .unwrap_or(soil)
-    }
+        let map_groups = vec![
+            &self.seed_to_soil,
+            &self.soil_to_fertilizer,
+            &self.fertilizer_to_water,
+            &self.water_to_light,
+            &self.light_to_temperature,
+            &self.temperature_to_humidity,
+            &self.humidity_to_location,
+        ];
 
-    fn lowest_location_seed(&self) -> u64 {
-        let location_max = self
-            .humidity_to_location
-            .iter()
-            .flat_map(|map| (map.destination_start..map.destination_start + map.range_length))
-            .max()
-            .unwrap_or_default();
-
-        for location in 0..location_max {
-            // Map each location to a humidity, to a temperature, etc., to a seed
-            let seed = self.location_to_seed(location);
-
-            // TODO: check if seed in seed range
-            let seed_range = self
-                .seeds
-                .iter()
-                .find(|range| seed >= range.start && seed < range.start + range.length);
-
-            // If a seed is found, return it, else continue with the next location
-            if seed_range.is_some() {
-                return location;
+        for map_group in map_groups {
+            let mut next_ranges: Vec<Range> = vec![];
+            while !current_ranges.is_empty() {
+                let range = current_ranges.remove(0);
+                let mut matched = false;
+                for map in map_group.iter() {
+                    let result = map.map_range(&range);
+                    if let Some(mapped_range) = result.mapped_range {
+                        next_ranges.push(mapped_range);
+                        current_ranges.extend(result.remaining_ranges);
+                        matched = true;
+                        break;
+                    }
+                }
+                if !matched {
+                    next_ranges.push(range);
+                }
             }
+            current_ranges.extend(next_ranges);
         }
-        panic!("No seed found")
+
+        current_ranges
+            .iter()
+            .map(|range| range.start)
+            .min()
+            .unwrap()
     }
 }
 
 fn solve_problem_1(input: String) -> u64 {
     let almanak = Almanak::new(input, false);
-    almanak
-        .seeds
-        .iter()
-        .flat_map(|range| (range.start..range.start + range.length))
-        .map(|seed| almanak.seed_to_location(seed))
-        .min()
-        .unwrap()
+    almanak.lowest_location_for_seeds()
 }
 
 fn solve_problem_2(input: String) -> u64 {
     let almanak = Almanak::new(input, true);
-    almanak.lowest_location_seed()
+    almanak.lowest_location_for_seeds()
 }
 
 fn main() {
