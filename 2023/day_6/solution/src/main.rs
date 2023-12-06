@@ -1,14 +1,5 @@
+use std::cmp::{max, min};
 use std::fs;
-
-struct Game {
-    distance: u64, // mm
-}
-
-impl Game {
-    fn won(&self, distance_to_beat: u64) -> bool {
-        self.distance > distance_to_beat
-    }
-}
 
 #[derive(Debug)]
 struct Race {
@@ -17,24 +8,54 @@ struct Race {
 }
 
 impl Race {
-    fn get_games(&self) -> Vec<Game> {
-        let mut games = Vec::new();
-        for i in 0..self.time {
-            let speed = i;
-            let time_left = self.time - i;
-
-            games.push(Game {
-                distance: time_left * speed,
-            })
-        }
-        games
-    }
-
+    /// Returns the number of possible games that win.
+    ///
+    /// A boat reaches a certain distance in the given time:
+    ///
+    /// distance(holding_time) = time_left * speed
+    ///                        = (time - holding_time) * speed
+    ///                        = (time - holding_time) * holding_time
+    ///                        = -holding_time^2 + (time * holding_time)
+    ///
+    /// or:
+    ///
+    /// f(x) = -x^2 + Tx
+    ///      = W
+    ///
+    /// Assuming there are winners (i.e. distance > record_distance), there should be two
+    /// intersections on `f(x) = W`, where `W = record_distance`.
+    ///
+    /// We have to calculate the two intersections and count the number of whole numbers
+    /// in the x-axis between them.
+    ///
+    /// x^2 - Tx + W = 0            x: holding_time, T: race.time, W: race.record_distance
+    /// ax^2 + bx + c = 0 => a = 1, b = -T, c = W
+    ///
+    /// The quadratic formula gives us two solutions:
+    ///
+    /// x1, x2 = (-b +- sqrt(b^2 - 4ac)) / 2a
+    ///        = (T +- sqrt(T^2 - 4W)) / 2
+    ///
     fn wins_count(&self) -> u64 {
-        self.get_games()
-            .iter()
-            .filter(|g| g.won(self.record_distance))
-            .count() as u64
+        let winning_holding_time_min = (self.time as f64
+            - ((self.time * self.time - 4 * self.record_distance) as f64).sqrt())
+            / 2.0;
+        let winning_holding_time_max = (self.time as f64
+            + ((self.time * self.time - 4 * self.record_distance) as f64).sqrt())
+            / 2.0;
+
+        let mut _min = max(0, winning_holding_time_min.ceil() as u64);
+        let mut _max = min(self.time, winning_holding_time_max.floor() as u64);
+
+        if _min as f64 == winning_holding_time_min {
+            _min += 1;
+        }
+
+        if _max as f64 == winning_holding_time_max {
+            _max -= 1;
+        }
+
+        _max - _min + 1
     }
 }
 
