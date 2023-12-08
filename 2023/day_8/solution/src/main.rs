@@ -86,10 +86,24 @@ fn solve_problem_2(input: String) -> u64 {
                 _ => panic!("Invalid direction"),
             };
         }
+
+        // Check if the least common multiple is a valid way to get the answer
+        let mut verify_steps: u64 = 0;
+        while !current.ends_with('Z') || verify_steps == 0 {
+            let index = ((steps + verify_steps) % directions.len() as u64) as usize;
+            verify_steps += 1;
+            current = match directions[index] {
+                'L' => left_map.get(current).unwrap(),
+                'R' => right_map.get(current).unwrap(),
+                _ => panic!("Invalid direction"),
+            };
+        }
+        assert_eq!(verify_steps, steps);
+
         steps_per_starting_node.push(steps);
     }
 
-    // Get greatest common divisor
+    // Get the least common multiple
     steps_per_starting_node
         .iter()
         .fold(steps_per_starting_node[0], |acc, &x| lcm(acc, x))
@@ -128,12 +142,13 @@ mod tests {
         let content = "L
 
 AAA = (AAB, XXX)
-AAB = (ZZZ, XXX)
+AAB = (AAZ, XXX)
+AAZ = (AAB, XXX)
 BBA = (BBB, XXX)
 BBB = (BBC, XXX)
 BBC = (BBD, XXX)
-BBD = (ZZZ, XXX)
-ZZZ = (ZZZ, ZZZ)
+BBD = (BBZ, XXX)
+BBZ = (BBB, XXX)
 "
         .to_string();
         assert_eq!(solve_problem_2(content), 4);
