@@ -1,10 +1,5 @@
 use std::fs;
 
-enum PredictionType {
-    Forward,
-    Backward,
-}
-
 #[derive(Debug)]
 struct Sequence {
     numbers: Vec<i64>,
@@ -17,7 +12,7 @@ impl Sequence {
         }
     }
 
-    fn prediction_recursive(numbers: Vec<i64>, prediction_type: PredictionType) -> i64 {
+    fn prediction_recursive(numbers: Vec<i64>) -> i64 {
         let mut new_numbers = vec![];
         let mut all_zeroes = true;
         let mut last_number = None;
@@ -32,35 +27,38 @@ impl Sequence {
             }
             last_number = Some(*number);
         }
-        match prediction_type {
-            PredictionType::Forward if all_zeroes => *numbers.last().unwrap(),
-            PredictionType::Backward if all_zeroes => *numbers.first().unwrap(),
-            PredictionType::Forward => {
-                numbers.last().unwrap() + Self::prediction_recursive(new_numbers, prediction_type)
-            }
-            PredictionType::Backward => {
-                numbers.first().unwrap() - Self::prediction_recursive(new_numbers, prediction_type)
-            }
+        if all_zeroes {
+            *numbers.last().unwrap()
+        } else {
+            numbers.last().unwrap() + Self::prediction_recursive(new_numbers)
         }
     }
 
     fn predict_next(&self) -> i64 {
-        Self::prediction_recursive(self.numbers.clone(), PredictionType::Forward)
+        Self::prediction_recursive(self.numbers.clone())
     }
 
     fn predict_last(&self) -> i64 {
-        Self::prediction_recursive(self.numbers.clone(), PredictionType::Backward)
+        let mut numbers = self.numbers.clone();
+        numbers.reverse();
+        Self::prediction_recursive(numbers)
     }
 }
 
 fn solve_problem_1(input: String) -> i64 {
-    let sequences: Vec<Sequence> = input.lines().map(Sequence::new).collect();
-    sequences.iter().map(|x| x.predict_next()).sum()
+    input
+        .lines()
+        .map(Sequence::new)
+        .map(|x| x.predict_next())
+        .sum()
 }
 
 fn solve_problem_2(input: String) -> i64 {
-    let sequences: Vec<Sequence> = input.lines().map(Sequence::new).collect();
-    sequences.iter().map(|x| x.predict_last()).sum()
+    input
+        .lines()
+        .map(Sequence::new)
+        .map(|x| x.predict_last())
+        .sum()
 }
 
 fn main() {
