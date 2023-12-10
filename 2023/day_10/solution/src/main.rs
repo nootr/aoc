@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::fs;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 enum Direction {
     N,
     E,
@@ -21,7 +21,7 @@ impl From<(isize, isize)> for Direction {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 enum NodeShape {
     NS,
     EW,
@@ -47,22 +47,8 @@ impl From<(Direction, Direction)> for NodeShape {
 
 #[derive(Debug, Clone, Copy)]
 struct Node {
-    pos: (isize, isize),
     neighbours: [(isize, isize); 2],
-}
-
-impl Node {
-    fn shape(&self) -> NodeShape {
-        let direction_a = Direction::from((
-            self.neighbours[0].0 - self.pos.0,
-            self.neighbours[0].1 - self.pos.1,
-        ));
-        let direction_b = Direction::from((
-            self.neighbours[1].0 - self.pos.0,
-            self.neighbours[1].1 - self.pos.1,
-        ));
-        NodeShape::from((direction_a, direction_b))
-    }
+    shape: NodeShape,
 }
 
 #[derive(Debug)]
@@ -85,28 +71,28 @@ impl Grid {
                         let x = x as isize;
                         match c {
                             '|' => Some(Node {
-                                pos: (x, y),
                                 neighbours: [(x, y - 1), (x, y + 1)],
+                                shape: NodeShape::NS,
                             }),
                             '-' => Some(Node {
-                                pos: (x, y),
                                 neighbours: [(x - 1, y), (x + 1, y)],
+                                shape: NodeShape::EW,
                             }),
                             'L' => Some(Node {
-                                pos: (x, y),
                                 neighbours: [(x, y - 1), (x + 1, y)],
+                                shape: NodeShape::NE,
                             }),
                             'J' => Some(Node {
-                                pos: (x, y),
                                 neighbours: [(x - 1, y), (x, y - 1)],
+                                shape: NodeShape::NW,
                             }),
                             '7' => Some(Node {
-                                pos: (x, y),
                                 neighbours: [(x - 1, y), (x, y + 1)],
+                                shape: NodeShape::SW,
                             }),
                             'F' => Some(Node {
-                                pos: (x, y),
                                 neighbours: [(x + 1, y), (x, y + 1)],
+                                shape: NodeShape::SE,
                             }),
                             'S' => {
                                 start = Some((x, y));
@@ -128,6 +114,7 @@ impl Grid {
         // Set starting point
         let start = start.expect("Grid should have starting point");
         let mut starting_node_neighbours = vec![];
+        let mut directions = vec![];
         for dx in -1..=1 {
             for dy in -1..=1 {
                 let neighbour = (start.0 + dx, start.1 + dy);
@@ -141,13 +128,14 @@ impl Grid {
                 if let Some(node) = nodes[neighbour.1 as usize][neighbour.0 as usize] {
                     if node.neighbours.contains(&start) {
                         starting_node_neighbours.push(neighbour);
+                        directions.push((dx, dy).into());
                     }
                 }
             }
         }
         nodes[start.1 as usize][start.0 as usize] = Some(Node {
-            pos: start,
             neighbours: [starting_node_neighbours[0], starting_node_neighbours[1]],
+            shape: (directions[0], directions[1]).into(),
         });
 
         Self { nodes, start }
@@ -194,15 +182,15 @@ fn solve_problem_2(input: String) -> u64 {
     let main_loop = grid.main_loop();
 
     let mut dots_inside = 0;
-    for (y, line) in grid.nodes.iter().enumerate() {
+    for (y, row) in grid.nodes.iter().enumerate() {
         let y = y as isize;
         let mut is_inside = false;
         let mut loop_came_from = None;
-        for (x, _) in line.iter().enumerate() {
+        for (x, _) in row.iter().enumerate() {
             let x = x as isize;
             if main_loop.contains(&(x, y)) {
                 let node = grid.node((x, y)).unwrap();
-                match node.shape() {
+                match node.shape {
                     NodeShape::NS => {
                         is_inside = !is_inside;
                     }
