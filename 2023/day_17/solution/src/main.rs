@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
@@ -56,46 +56,29 @@ impl Grid {
         &self.nodes[y][x]
     }
 
-    /// Find the path with the lowest heat loss and not more than three consecutive moves in the
-    /// same direction and return the cumulative heat loss.
+    /// Find the path with the lowest heat loss and return the cumulative heat loss.
     fn best_path_heat_loss(&self, direction_moves_min: u8, direction_moves_max: u8) -> u64 {
-        let mut unvisited: HashMap<((usize, usize), Direction, u8), Option<u64>> =
-            HashMap::from_iter(self.nodes.iter().enumerate().flat_map(|(y, row)| {
-                [
-                    Direction::North,
-                    Direction::East,
-                    Direction::South,
-                    Direction::West,
-                ]
-                .iter()
-                .flat_map(move |direction| {
-                    (1..=direction_moves_max).flat_map(move |i| {
-                        row.iter()
-                            .enumerate()
-                            .map(move |(x, _)| (((x, y), *direction, i), None))
-                    })
-                })
-            }));
-        unvisited.insert(((0, 0), Direction::East, 0), Some(0));
+        let mut visited = HashSet::new();
+        let mut queue: HashMap<((usize, usize), Direction, u8), u64> = HashMap::from([
+            (((0, 0), Direction::North, 0), 0),
+            (((0, 0), Direction::East, 0), 0),
+            (((0, 0), Direction::South, 0), 0),
+            (((0, 0), Direction::West, 0), 0),
+        ]);
 
-        loop {
-            // Find unvisited node with lowest heat loss
+        while !queue.is_empty() {
+            // Find node with lowest heat loss
             let mut current = (0, 0);
             let mut cumulative_heat_loss = u64::MAX;
             let mut last_direction = Direction::East;
             let mut last_direction_moves = 0;
-            for ((pos, direction, direction_moves), heat_loss) in &unvisited {
-                if heat_loss.is_some() && heat_loss.unwrap() < cumulative_heat_loss {
+            for ((pos, direction, direction_moves), heat_loss) in &queue {
+                if *heat_loss < cumulative_heat_loss {
                     current = *pos;
-                    cumulative_heat_loss = heat_loss.unwrap();
+                    cumulative_heat_loss = *heat_loss;
                     last_direction = *direction;
                     last_direction_moves = *direction_moves;
                 }
-            }
-
-            // Check if a next node is available
-            if cumulative_heat_loss == u64::MAX {
-                panic!("Could not find route");
             }
 
             // Check if goal is reached
@@ -103,10 +86,12 @@ impl Grid {
                 if last_direction_moves >= direction_moves_min {
                     return cumulative_heat_loss;
                 }
-                unvisited.remove(&(current, last_direction, last_direction_moves));
+                queue.remove(&(current, last_direction, last_direction_moves));
                 continue;
             }
-            unvisited.remove(&(current, last_direction, last_direction_moves));
+            let key = (current, last_direction, last_direction_moves);
+            visited.insert(key);
+            queue.remove(&key);
 
             // Find possible neighbours
             let neighbours: Vec<((usize, usize), Direction)> = [
@@ -141,7 +126,7 @@ impl Grid {
             .map(|((x, y), d)| ((*x as usize, *y as usize), *d))
             .collect();
 
-            // Update the cumulative heat loss of the neighbours
+            // Update the cumulative heat loss of the neighbours and add to queue
             for (neighbour, direction) in &neighbours {
                 let neighbour_heat_loss =
                     cumulative_heat_loss + self.node(neighbour.0, neighbour.1).heat_loss as u64;
@@ -151,17 +136,17 @@ impl Grid {
                     1
                 };
                 let key = (*neighbour, *direction, neighbour_moves);
-                if unvisited.contains_key(&key) {
-                    let neighbour_current_heat_loss = *unvisited.get(&key).unwrap();
+                if visited.contains(&key) {
+                    continue;
+                }
+                let neighbour_current_heat_loss = *queue.get(&key).unwrap_or(&u64::MAX);
 
-                    if neighbour_current_heat_loss.is_none()
-                        || neighbour_heat_loss < neighbour_current_heat_loss.unwrap()
-                    {
-                        unvisited.insert(key, Some(neighbour_heat_loss));
-                    }
+                if neighbour_heat_loss < neighbour_current_heat_loss {
+                    queue.insert(key, neighbour_heat_loss);
                 }
             }
         }
+        panic!("Could not find route");
     }
 }
 
