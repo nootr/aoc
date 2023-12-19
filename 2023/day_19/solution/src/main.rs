@@ -23,9 +23,9 @@ impl MachinePartType {
 
 #[derive(Debug)]
 enum Rule {
-    GreaterThan(MachinePartType, u32, String),
-    LessThan(MachinePartType, u32, String),
-    Equals(MachinePartType, u32, String),
+    GreaterThan(MachinePartType, u64, String),
+    LessThan(MachinePartType, u64, String),
+    Equals(MachinePartType, u64, String),
     Workflow(String),
 }
 
@@ -37,7 +37,7 @@ impl Rule {
             let comparison = chars.next().unwrap();
 
             let parts: Vec<&str> = s[2..].split(':').collect();
-            let value: u32 = parts[0].parse().unwrap();
+            let value: u64 = parts[0].parse().unwrap();
             let workflow = parts[1].to_string();
 
             match comparison {
@@ -74,15 +74,147 @@ impl Workflow {
 #[derive(Debug)]
 struct MachinePartSpec {
     machine_part_type: MachinePartType,
-    value: u32,
+    value: u64,
+}
+
+#[derive(Debug, Clone)]
+struct MachinePartRange {
+    x: (u64, u64),
+    m: (u64, u64),
+    a: (u64, u64),
+    s: (u64, u64),
+}
+
+impl MachinePartRange {
+    fn new() -> Self {
+        Self {
+            x: (1, 4000),
+            m: (1, 4000),
+            a: (1, 4000),
+            s: (1, 4000),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.x.0 > self.x.1 || self.m.0 > self.m.1 || self.a.0 > self.a.1 || self.s.0 > self.s.1
+    }
+
+    fn split_up_to(&self, machine_part_type: &MachinePartType, split: u64) -> (Self, Self) {
+        match machine_part_type {
+            MachinePartType::X => (
+                Self {
+                    x: (self.x.0, split - 1),
+                    ..*self
+                },
+                Self {
+                    x: (split, self.x.1),
+                    ..*self
+                },
+            ),
+            MachinePartType::M => (
+                Self {
+                    m: (self.m.0, split - 1),
+                    ..*self
+                },
+                Self {
+                    m: (split, self.m.1),
+                    ..*self
+                },
+            ),
+            MachinePartType::A => (
+                Self {
+                    a: (self.a.0, split - 1),
+                    ..*self
+                },
+                Self {
+                    a: (split, self.a.1),
+                    ..*self
+                },
+            ),
+            MachinePartType::S => (
+                Self {
+                    s: (self.s.0, split - 1),
+                    ..*self
+                },
+                Self {
+                    s: (split, self.s.1),
+                    ..*self
+                },
+            ),
+        }
+    }
+
+    fn execute_workflow(&self, workflow: &Workflow) -> Vec<(String, Self)> {
+        let mut split_ranges = vec![];
+        let mut remaining_ranges = vec![self.clone()];
+        for rule in &workflow.rules {
+            let mut new_remaining_ranges = vec![];
+            match rule {
+                Rule::GreaterThan(machine_part_type, value, next_workflow_name) => {
+                    for remaining_range in remaining_ranges {
+                        let (low, high) = remaining_range.split_up_to(machine_part_type, value + 1);
+                        if !low.is_empty() {
+                            new_remaining_ranges.push(low);
+                        }
+                        if !high.is_empty() {
+                            split_ranges.push((next_workflow_name.clone(), high));
+                        }
+                    }
+                }
+                Rule::LessThan(machine_part_type, value, next_workflow_name) => {
+                    for remaining_range in remaining_ranges {
+                        let (low, high) = remaining_range.split_up_to(machine_part_type, *value);
+                        if !low.is_empty() {
+                            split_ranges.push((next_workflow_name.clone(), low));
+                        }
+                        if !high.is_empty() {
+                            new_remaining_ranges.push(high);
+                        }
+                    }
+                }
+                Rule::Equals(machine_part_type, value, next_workflow_name) => {
+                    for remaining_range in remaining_ranges {
+                        let (low, mid) = remaining_range.split_up_to(machine_part_type, *value);
+                        let (mid, high) = mid.split_up_to(machine_part_type, value + 1);
+                        if !low.is_empty() {
+                            new_remaining_ranges.push(low);
+                        }
+                        if !mid.is_empty() {
+                            split_ranges.push((next_workflow_name.clone(), mid));
+                        }
+                        if !high.is_empty() {
+                            new_remaining_ranges.push(high);
+                        }
+                    }
+                }
+                Rule::Workflow(next_workflow_name) => {
+                    for remaining_range in remaining_ranges {
+                        split_ranges.push((next_workflow_name.clone(), remaining_range));
+                    }
+                }
+            }
+            remaining_ranges = new_remaining_ranges;
+            if remaining_ranges.is_empty() {
+                break;
+            }
+        }
+        split_ranges
+    }
+
+    fn total_parts(&self) -> u64 {
+        (self.x.1 - self.x.0 + 1)
+            * (self.m.1 - self.m.0 + 1)
+            * (self.a.1 - self.a.0 + 1)
+            * (self.s.1 - self.s.0 + 1)
+    }
 }
 
 #[derive(Debug)]
 struct MachinePart {
-    x: u32,
-    m: u32,
-    a: u32,
-    s: u32,
+    x: u64,
+    m: u64,
+    a: u64,
+    s: u64,
 }
 
 impl MachinePart {
@@ -155,7 +287,7 @@ impl MachinePart {
         }
     }
 
-    fn value(&self, machine_part_type: &MachinePartType) -> u32 {
+    fn value(&self, machine_part_type: &MachinePartType) -> u64 {
         match machine_part_type {
             MachinePartType::X => self.x,
             MachinePartType::M => self.m,
@@ -164,7 +296,7 @@ impl MachinePart {
         }
     }
 
-    fn total_value(&self) -> u32 {
+    fn total_value(&self) -> u64 {
         self.x + self.m + self.a + self.s
     }
 }
@@ -182,7 +314,7 @@ fn solve_problem_1(input: String) -> u64 {
     machine_parts
         .iter()
         .filter(|part| part.test(&workflows))
-        .map(|part| part.total_value() as u64)
+        .map(|part| part.total_value())
         .sum()
 }
 
@@ -195,23 +327,30 @@ fn solve_problem_2(input: String) -> u64 {
             .map(|workflow| (workflow.name.clone(), workflow)),
     );
 
-    let mut count = 0;
+    let mut ranges: Vec<(String, MachinePartRange)> =
+        vec![("in".to_string(), MachinePartRange::new())];
+    let mut accepted_count = 0;
 
-    for x in 0..4000 {
-        for m in 0..4000 {
-            for a in 0..4000 {
-                for s in 0..4000 {
-                    // TODO: convert the workflows into lists of machine part ranges
-                    let machine_part = MachinePart { x, m, a, s };
-                    if machine_part.test(&workflows) {
-                        count += machine_part.total_value() as u64;
-                    }
+    while !ranges.is_empty() {
+        let (workflow_name, range) = ranges.remove(0);
+        let workflow = workflows.get(&workflow_name).unwrap();
+        let new_ranges: Vec<(String, MachinePartRange)> = range
+            .execute_workflow(workflow)
+            .iter()
+            .filter(|(workflow_name, range)| {
+                if *workflow_name == "A" {
+                    accepted_count += range.total_parts();
+                    false
+                } else {
+                    *workflow_name != "R"
                 }
-            }
-        }
+            })
+            .cloned()
+            .collect();
+        ranges.extend(new_ranges);
     }
 
-    count
+    accepted_count
 }
 
 fn main() {
