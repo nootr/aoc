@@ -1,3 +1,4 @@
+use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::fs;
 
@@ -86,12 +87,48 @@ struct MachinePartRange {
 }
 
 impl MachinePartRange {
-    fn new() -> Self {
+    fn full() -> Self {
         Self {
             x: (1, 4000),
             m: (1, 4000),
             a: (1, 4000),
             s: (1, 4000),
+        }
+    }
+
+    /// Parses a string representing a machine part range of size 1; a single machine part
+    fn parse_single(s: &str) -> Self {
+        let s = &s[1..s.len() - 1];
+        let specs: Vec<MachinePartSpec> = s
+            .split(',')
+            .map(|s| {
+                let parts: Vec<&str> = s.split('=').collect();
+                MachinePartSpec {
+                    machine_part_type: MachinePartType::parse(parts[0].chars().next().unwrap()),
+                    value: parts[1].parse().unwrap(),
+                }
+            })
+            .collect();
+
+        let (x, m, a, s) = specs
+            .iter()
+            .fold((None, None, None, None), |(x, m, a, s), spec| {
+                match spec.machine_part_type {
+                    MachinePartType::X => (Some(spec.value), m, a, s),
+                    MachinePartType::M => (x, Some(spec.value), a, s),
+                    MachinePartType::A => (x, m, Some(spec.value), s),
+                    MachinePartType::S => (x, m, a, Some(spec.value)),
+                }
+            });
+        let x = x.unwrap();
+        let m = m.unwrap();
+        let a = a.unwrap();
+        let s = s.unwrap();
+        Self {
+            x: (x, x),
+            m: (m, m),
+            a: (a, a),
+            s: (s, s),
         }
     }
 
@@ -103,41 +140,41 @@ impl MachinePartRange {
         match machine_part_type {
             MachinePartType::X => (
                 Self {
-                    x: (self.x.0, split - 1),
+                    x: (self.x.0, min(split - 1, self.x.1)),
                     ..*self
                 },
                 Self {
-                    x: (split, self.x.1),
+                    x: (max(split, self.x.0), self.x.1),
                     ..*self
                 },
             ),
             MachinePartType::M => (
                 Self {
-                    m: (self.m.0, split - 1),
+                    m: (self.m.0, min(split - 1, self.m.1)),
                     ..*self
                 },
                 Self {
-                    m: (split, self.m.1),
+                    m: (max(split, self.m.0), self.m.1),
                     ..*self
                 },
             ),
             MachinePartType::A => (
                 Self {
-                    a: (self.a.0, split - 1),
+                    a: (self.a.0, min(split - 1, self.a.1)),
                     ..*self
                 },
                 Self {
-                    a: (split, self.a.1),
+                    a: (max(split, self.a.0), self.a.1),
                     ..*self
                 },
             ),
             MachinePartType::S => (
                 Self {
-                    s: (self.s.0, split - 1),
+                    s: (self.s.0, min(split - 1, self.s.1)),
                     ..*self
                 },
                 Self {
-                    s: (split, self.s.1),
+                    s: (max(split, self.s.0), self.s.1),
                     ..*self
                 },
             ),
@@ -207,97 +244,31 @@ impl MachinePartRange {
             * (self.a.1 - self.a.0 + 1)
             * (self.s.1 - self.s.0 + 1)
     }
-}
 
-#[derive(Debug)]
-struct MachinePart {
-    x: u64,
-    m: u64,
-    a: u64,
-    s: u64,
-}
+    fn total_accepted_parts(&self, workflows: &HashMap<String, Workflow>) -> u64 {
+        let mut ranges: Vec<(String, MachinePartRange)> = vec![("in".to_string(), self.clone())];
+        let mut accepted_count = 0;
 
-impl MachinePart {
-    fn parse(s: &str) -> Self {
-        let s = &s[1..s.len() - 1];
-        let specs: Vec<MachinePartSpec> = s
-            .split(',')
-            .map(|s| {
-                let parts: Vec<&str> = s.split('=').collect();
-                MachinePartSpec {
-                    machine_part_type: MachinePartType::parse(parts[0].chars().next().unwrap()),
-                    value: parts[1].parse().unwrap(),
-                }
-            })
-            .collect();
-
-        let (x, m, a, s) = specs
-            .iter()
-            .fold((None, None, None, None), |(x, m, a, s), spec| {
-                match spec.machine_part_type {
-                    MachinePartType::X => (Some(spec.value), m, a, s),
-                    MachinePartType::M => (x, Some(spec.value), a, s),
-                    MachinePartType::A => (x, m, Some(spec.value), s),
-                    MachinePartType::S => (x, m, a, Some(spec.value)),
-                }
-            });
-        Self {
-            x: x.unwrap(),
-            m: m.unwrap(),
-            a: a.unwrap(),
-            s: s.unwrap(),
-        }
-    }
-
-    fn test(&self, workflows: &HashMap<String, Workflow>) -> bool {
-        let mut workflow_name = "in".to_string();
-        loop {
-            if workflow_name == "A" {
-                return true;
-            }
-            if workflow_name == "R" {
-                return false;
-            }
+        while !ranges.is_empty() {
+            let (workflow_name, range) = ranges.remove(0);
             let workflow = workflows.get(&workflow_name).unwrap();
-            for rule in &workflow.rules {
-                match rule {
-                    Rule::GreaterThan(machine_part_type, value, next_workflow_name) => {
-                        if self.value(machine_part_type) > *value {
-                            workflow_name = next_workflow_name.clone();
-                            break;
-                        }
+            let new_ranges: Vec<(String, MachinePartRange)> = range
+                .execute_workflow(workflow)
+                .iter()
+                .filter(|(workflow_name, range)| {
+                    if *workflow_name == "A" {
+                        accepted_count += range.total_parts();
+                        false
+                    } else {
+                        *workflow_name != "R"
                     }
-                    Rule::LessThan(machine_part_type, value, next_workflow_name) => {
-                        if self.value(machine_part_type) < *value {
-                            workflow_name = next_workflow_name.clone();
-                            break;
-                        }
-                    }
-                    Rule::Equals(machine_part_type, value, next_workflow_name) => {
-                        if self.value(machine_part_type) == *value {
-                            workflow_name = next_workflow_name.clone();
-                            break;
-                        }
-                    }
-                    Rule::Workflow(next_workflow_name) => {
-                        workflow_name = next_workflow_name.clone();
-                    }
-                }
-            }
+                })
+                .cloned()
+                .collect();
+            ranges.extend(new_ranges);
         }
-    }
 
-    fn value(&self, machine_part_type: &MachinePartType) -> u64 {
-        match machine_part_type {
-            MachinePartType::X => self.x,
-            MachinePartType::M => self.m,
-            MachinePartType::A => self.a,
-            MachinePartType::S => self.s,
-        }
-    }
-
-    fn total_value(&self) -> u64 {
-        self.x + self.m + self.a + self.s
+        accepted_count
     }
 }
 
@@ -309,12 +280,19 @@ fn solve_problem_1(input: String) -> u64 {
             .map(Workflow::parse)
             .map(|workflow| (workflow.name.clone(), workflow)),
     );
-    let machine_parts: Vec<MachinePart> = parts[1].lines().map(MachinePart::parse).collect();
+    let machine_parts: Vec<MachinePartRange> = parts[1]
+        .lines()
+        .map(MachinePartRange::parse_single)
+        .collect();
 
     machine_parts
         .iter()
-        .filter(|part| part.test(&workflows))
-        .map(|part| part.total_value())
+        .filter(|part| {
+            let value = part.total_accepted_parts(&workflows);
+            assert!(value <= 1);
+            value == 1
+        })
+        .map(|part| part.x.0 + part.m.0 + part.a.0 + part.s.0)
         .sum()
 }
 
@@ -326,31 +304,7 @@ fn solve_problem_2(input: String) -> u64 {
             .map(Workflow::parse)
             .map(|workflow| (workflow.name.clone(), workflow)),
     );
-
-    let mut ranges: Vec<(String, MachinePartRange)> =
-        vec![("in".to_string(), MachinePartRange::new())];
-    let mut accepted_count = 0;
-
-    while !ranges.is_empty() {
-        let (workflow_name, range) = ranges.remove(0);
-        let workflow = workflows.get(&workflow_name).unwrap();
-        let new_ranges: Vec<(String, MachinePartRange)> = range
-            .execute_workflow(workflow)
-            .iter()
-            .filter(|(workflow_name, range)| {
-                if *workflow_name == "A" {
-                    accepted_count += range.total_parts();
-                    false
-                } else {
-                    *workflow_name != "R"
-                }
-            })
-            .cloned()
-            .collect();
-        ranges.extend(new_ranges);
-    }
-
-    accepted_count
+    MachinePartRange::full().total_accepted_parts(&workflows)
 }
 
 fn main() {
